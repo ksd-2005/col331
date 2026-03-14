@@ -1,16 +1,17 @@
 struct buf;
-struct rtcdate;
-struct superblock;
-struct inode;
-struct stat;
 struct context;
+struct inode;
 struct proc;
-struct spinlock;
+struct rtcdate;
 struct sleeplock;
+struct spinlock; 
+struct stat;
+struct superblock;
+
 
 // bio.c
 void            binit(void);
-struct buf* bread(uint, uint);
+struct buf*     bread(uint, uint);
 void            bwrite(struct buf*);
 void            brelse(struct buf *b);
 
@@ -26,37 +27,36 @@ void            consputc(int);
 int             exec(char*, char**);
 
 // file.c
-struct file* filealloc(void);
+struct file*    filealloc(void);
 void            fileclose(struct file*);
-struct file* filedup(struct file*);
+struct file*    filedup(struct file*);
 void            fileinit(void);
 int             fileread(struct file*, char*, int n);
 int             filestat(struct file*, struct stat*);
 int             filewrite(struct file*, char*, int n);
 int             mkdir(char *path);
-struct file* open(char* path, int omode);
+struct file*    open(char* path, int omode);
 int             unlink(char* path, char* name);
 int             isdirempty(struct inode *dp);
 int             mknod(struct inode *ip, char* path, int major, int minor);
 
 // fs.c
 void            readsb(int dev, struct superblock *sb);
+int             dirlink(struct inode*, char*, uint);
+struct inode*   dirlookup(struct inode*, char*, uint*);
+struct inode*   ialloc(uint, short);
+struct inode*   idup(struct inode*);
 void            iinit(int dev);
-void            iread(struct inode*);
 void            ilock(struct inode*);
+void            iput(struct inode*);
 void            iunlock(struct inode*);
 void            iunlockput(struct inode*);
-struct inode* iget(uint dev, uint inum);
+void            iupdate(struct inode*);
+int             namecmp(const char*, const char*);
+struct inode*   namei(char*);
+struct inode*   nameiparent(char*, char*);
 int             readi(struct inode*, char*, uint, uint);
 void            stati(struct inode*, struct stat*);
-int             namecmp(const char*, const char*);
-struct inode* namei(char*);
-struct inode* nameiparent(char*, char*);
-struct inode* dirlookup(struct inode*, char*, uint*);
-int             dirlink(struct inode *dp, char *name, uint inum);
-struct inode* ialloc(uint dev, short type);
-void            iupdate(struct inode *ip);
-void            iput(struct inode*);
 int             writei(struct inode*, char*, uint, uint);
 
 // ide.c
@@ -70,13 +70,13 @@ extern uchar    ioapicid;
 void            ioapicinit(void);
 
 // kalloc.c
-char* kalloc(void);
+char*           kalloc(void);
 void            kfree(char*);
 void            kinit(void*, void*);
 
 // lapic.c
 int             lapicid(void);
-extern volatile uint* lapic;
+extern volatile uint*    lapic;
 void            lapiceoi(void);
 void            lapicinit(void);
 void            lapicstartap(uchar, uint);
@@ -99,14 +99,15 @@ void            picinit(void);
 // proc.c
 int             cpuid(void);
 void            pinit(void);
-struct cpu* mycpu(void);
-struct proc* myproc();
+struct cpu*     mycpu(void);
+struct proc*    myproc();
 void            scheduler(void) __attribute__((noreturn));
 void            procdump(void);
 void            yield(void);
-void             forkret(void);
+void            forkret(void);
 void            sleep(void*);
 void            wakeup(void*);
+
 
 // sleeplock.c
 void            acquiresleep(struct sleeplock*);
@@ -124,12 +125,12 @@ void            release(struct spinlock*);
 
 // string.c
 int             memcmp(const void*, const void*, uint);
-void* memmove(void*, const void*, uint);
-void* memset(void*, int, uint);
-char* safestrcpy(char*, const char*, int);
+void*           memmove(void*, const void*, uint);
+void*           memset(void*, int, uint);
+char*           safestrcpy(char*, const char*, int);
 int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
-char* strncpy(char*, const char*, int);
+char*           strncpy(char*, const char*, int);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -146,6 +147,7 @@ void            syscall(void);
 void            idtinit(void);
 extern uint     ticks;
 void            tvinit(void);
+extern struct spinlock tickslock;
 
 // uart.c
 void            uartinit(void);

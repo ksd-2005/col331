@@ -127,6 +127,8 @@ iinit(int dev)
           sb.bmapstart);
 }
 
+static struct inode* iget(uint dev, uint inum);
+
 // Allocate an inode on device dev.
 // Mark it as allocated by  giving it type type.
 // Returns an unlocked but allocated and referenced inode.
@@ -157,29 +159,29 @@ ialloc(uint dev, short type)
 // be recycled.
 // If that was the last reference and the inode has no links
 // to it, free the inode (and its content) on disk.
+// All calls to iput() must be inside a transaction in
+// case it has to free the inode.
 void
 iput(struct inode *ip)
 {
-  acquire(&icache.lock); // (Protect the ref check)
-  
+  acquiresleep(&ip->lock);
   if(ip->valid && ip->nlink == 0){
+    acquire(&icache.lock);
     int r = ip->ref;
+    release(&icache.lock);
     if(r == 1){
       // inode has no links and no other references: truncate and free.
-      
-      release(&icache.lock); // Drop lock before disk I/O!
-      
       itrunc(ip);
       ip->type = 0;
       iupdate(ip);
       ip->valid = 0;
-      
-      acquire(&icache.lock); // Re-acquire lock to safely decrement ref
     }
   }
-  
+  releasesleep(&ip->lock);
+
+  acquire(&icache.lock);
   ip->ref--;
-  release(&icache.lock); // (Final release)
+  release(&icache.lock);
 }
 
 // Copy a modified in-memory inode to disk.
@@ -206,7 +208,7 @@ iupdate(struct inode *ip)
 // Find the inode with number inum on device dev
 // and return the in-memory copy. Does not lock
 // the inode and does not read it from disk.
-struct inode*
+static struct inode*
 iget(uint dev, uint inum)
 {
   struct inode *ip, *empty;
@@ -240,6 +242,8 @@ iget(uint dev, uint inum)
   return ip;
 }
 
+// Lock the given inode.
+// Reads the inode from disk if necessary.
 void
 ilock(struct inode *ip)
 {
@@ -249,7 +253,7 @@ ilock(struct inode *ip)
   if(ip == 0 || ip->ref < 1)
     panic("ilock");
 
-  acquiresleep(&ip->lock); // <-- Lock the inode
+  acquiresleep(&ip->lock);
 
   if(ip->valid == 0){
     bp = bread(ip->dev, IBLOCK(ip->inum, sb));
@@ -267,13 +271,14 @@ ilock(struct inode *ip)
   }
 }
 
+// Unlock the given inode.
 void
 iunlock(struct inode *ip)
 {
   if(ip == 0 || !holdingsleep(&ip->lock) || ip->ref < 1)
     panic("iunlock");
 
-  releasesleep(&ip->lock); // <-- Unlock the inode
+  releasesleep(&ip->lock);
 }
 
 // A handy helper function to unlock AND put the inode away

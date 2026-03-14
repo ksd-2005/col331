@@ -1,17 +1,11 @@
 #include "types.h"
 #include "defs.h"
-#include "x86.h"
-#include "spinlock.h"
-#include "sleeplock.h"
-#include "fs.h"
-#include "buf.h"
 #include "param.h"
-#include "stat.h"
-#include "file.h"
-#include "fcntl.h"
-#include "mmu.h"
-#include "proc.h"
 #include "memlayout.h"
+#include "mmu.h"
+#include "x86.h"
+#include "proc.h"
+#include "spinlock.h"
 
 struct {
   struct spinlock lock;
@@ -57,20 +51,18 @@ allocproc(void)
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == UNUSED)
       goto found;
-  release(&ptable.lock); // (if no slots found)
+  release(&ptable.lock);
   return 0;
 
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-  release(&ptable.lock); // (safe to release now that state is EMBRYO)
+  release(&ptable.lock);
 
   if((p->offset = kalloc()) == 0){
     p->state = UNUSED;
     return 0;
   }
-  
-  // ---> INCOMING CHANGE ADOPTED HERE <---
   p->sz = PGSIZE;
 
   // kstack lives on a different segment
@@ -80,7 +72,6 @@ found:
   }
 
   sp = (char*)(p->kstack + PGSIZE);
-  // --------------------------------------
 
   // Allocate kernel stack.
   p->kstack = sp - KSTACKSIZE;
@@ -126,11 +117,7 @@ pinit(void)
   p->tf->ss = p->tf->ds;
 
   p->tf->eflags = FL_IF;
-  
-  // ---> INCOMING CHANGE ADOPTED HERE <---
   p->tf->esp = PGSIZE;
-  // --------------------------------------
-  
   p->tf->eip = 0;  // beginning of initcode.S
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
@@ -156,7 +143,7 @@ scheduler(void)
     // Enable interrupts on this processor.
     sti();
 
-    acquire(&ptable.lock); // (lock before scanning processes)
+    acquire(&ptable.lock);
     // Loop over process table looking for process to run.
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
@@ -169,7 +156,7 @@ scheduler(void)
       switchuvm(p);
       swtch(&(c->scheduler), p->context);
     }
-    release(&ptable.lock); // (release when done scanning)
+    release(&ptable.lock);
   }
 }
 
@@ -206,38 +193,44 @@ yield(void)
   release(&ptable.lock);
 }
 
-// ---> HEAD VERSION KEPT HERE <---
 void
 forkret(void)
 {
   static int first = 1;
-  static volatile int init_done = 0; // <-- New global flag
-  int is_first;
-
-  // 1. Check the flag while we hold the scheduler lock
-  is_first = first;
-  if(first)
-    first = 0;
-
-  // 2. Safe to release the lock now
+  // Still holding ptable.lock from scheduler.
   release(&ptable.lock);
 
-  // 3. Process 1 does the heavy lifting
-  if (is_first) {
+  if (first) {
+    // Some initialization functions must be run in the context
+    // of a regular process (e.g., they call sleep), and thus cannot
+    // be run from main().
+    first = 0;
     iinit(ROOTDEV);
     initlog(ROOTDEV);
-    struct inode console;
-    mknod(&console, "console", CONSOLE, CONSOLE);
-    
-    init_done = 1; // <-- Signal that the disk is ready!
-  } else {
-    // 4. Any other process must patiently wait
-    while(init_done == 0) {
-      yield(); // Give the CPU back to the OS until Process 1 finishes
-    }
   }
 
   // Return to "caller", actually trapret (see allocproc).
+}
+
+void
+sleep(void *chan)
+{
+  struct proc *p = myproc();
+
+  if(p == 0)
+    panic("sleep");
+
+  // We MUST hold ptable.lock to call sched(), otherwise xv6 panics!
+  acquire(&ptable.lock);
+  // Go to sleep.
+  p->chan = chan;
+  p->state = SLEEPING;
+  
+  sched();
+
+  // Tidy up.
+  p->chan = 0;
+  release(&ptable.lock);
 }
 
 // Wake up all processes sleeping on chan.
@@ -261,27 +254,6 @@ wakeup(void *chan)
   release(&ptable.lock);
 }
 
-void
-sleep(void *chan)
-{
-  struct proc *p = myproc();
-
-  if(p == 0)
-    panic("sleep");
-
-  // We MUST hold ptable.lock to call sched(), otherwise xv6 panics!
-  acquire(&ptable.lock);
-  // Go to sleep.
-  p->chan = chan;
-  p->state = SLEEPING;
-  
-  sched();
-
-  // Tidy up.
-  p->chan = 0;
-  release(&ptable.lock);
-}
-// --------------------------------
 
 void
 procdump(void)
